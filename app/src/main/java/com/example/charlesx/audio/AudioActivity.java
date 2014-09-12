@@ -2,12 +2,11 @@ package com.example.charlesx.audio;
 
 import android.app.Activity;
 import android.content.Context;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaRecorder;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Environment;
 import android.util.Log;
 import android.view.Gravity;
@@ -25,13 +24,62 @@ public class AudioActivity extends Activity {
     private static String mFileName = null;
 
     private MediaRecorder mRecorder = null;
+    private RecordButton button;
+
+    private static final int GREEN_COLOR = Color.parseColor("#24D330");
+    private static final int RED_COLOR = Color.parseColor("#FF6A6A");
+
+    private Handler handler = new Handler();
+    private Thread animation = null;
+
+    private RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(500, 500);
+
 
     private void record(boolean isRecording) {
         if (isRecording) {
             startRecording();
+            animation = (new Thread( new Runnable() {
+                @Override
+                public void run() {
+                    while (button.isRecording) {
+                        try {
+                            Thread.sleep(100);
+                            handler.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (Thread.interrupted()) { return; }
+                                    changeAnimation();
+                                }
+                            });
+                        } catch (Exception e) {
+                            Log.i(LOG_TAG, "Interrupted");
+                            return;
+                        }
+                    }
+                }
+            }));
+            animation.start();
         } else {
             stopRecording();
+            animation.interrupt();
+            animation = null;
+            reset();
         }
+    }
+
+    private void changeAnimation() {
+        int level = mRecorder == null ? 0 : mRecorder.getMaxAmplitude() / 100;
+        View v = findViewById(R.id.animation);
+        RelativeLayout.LayoutParams newParams = new RelativeLayout.LayoutParams(500 + level, 500 + level);
+        newParams.addRule(RelativeLayout.CENTER_IN_PARENT);
+        v.setLayoutParams(newParams);
+        v.invalidate();
+    }
+
+    private void reset() {
+        View v = findViewById(R.id.animation);
+        v.setLayoutParams(params);
+        v.invalidate();
     }
 
     private void startRecording() {
@@ -57,7 +105,7 @@ public class AudioActivity extends Activity {
         mRecorder.reset();
         mRecorder.release();
         mRecorder = null;
-        Log.i(LOG_TAG, "Stopped");
+        Log.i(LOG_TAG, "Stopped Recording");
     }
 
     class RecordButton extends Button {
@@ -66,12 +114,10 @@ public class AudioActivity extends Activity {
 
         OnClickListener listener = new OnClickListener() {
             public void onClick(View v) {
-                RecordButton button = (RecordButton) v;
-                GradientDrawable circle = (GradientDrawable) button.getBackground();
                 isRecording = !isRecording;
                 record(isRecording);
-                if (isRecording) { circle.setColor(Color.parseColor("#24D330")); }
-                else { circle.setColor(Color.parseColor("#FF6A6A")); }
+                if (isRecording) { setCircleColor(v,GREEN_COLOR); }
+                else { setCircleColor(v, RED_COLOR); }
 
             }
         };
@@ -79,9 +125,15 @@ public class AudioActivity extends Activity {
         public RecordButton(Context context) {
             super(context);
             setBackgroundResource(R.drawable.circle);
-            setLayoutParams(new RelativeLayout.LayoutParams(500, 500));
+            setLayoutParams(params);
             setOnClickListener(listener);
         }
+    }
+
+    private void setCircleColor(View v, int color) {
+        RecordButton button = (RecordButton) v;
+        GradientDrawable circle = (GradientDrawable) button.getBackground();
+        circle.setColor(color);
     }
 
 
@@ -90,14 +142,18 @@ public class AudioActivity extends Activity {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(R.layout.activity_audio);
+        params.addRule(RelativeLayout.CENTER_IN_PARENT);
 
         RelativeLayout layout = (RelativeLayout) findViewById(R.id.layout);
         layout.setGravity(Gravity.CENTER);
 
-//        CircleView v = new CircleView(this);
-//        layout.addView(v);
+        View v = new View(this);
+        v.setBackgroundResource(R.drawable.circle_animation);
+        v.setLayoutParams(params);
+        v.setId(R.id.animation);
+        layout.addView(v);
 
-        RecordButton button = new RecordButton(this);
+        button = new RecordButton(this);
         layout.addView(button);
     }
 
@@ -106,27 +162,13 @@ public class AudioActivity extends Activity {
         if (mRecorder != null) {
             mRecorder.release();
             mRecorder = null;
+            setCircleColor(button, RED_COLOR);
+            button.isRecording = false;
+            reset();
         }
     }
 
     public AudioActivity() {
         mFileName = Environment.getExternalStorageDirectory().getAbsolutePath() + "/audio.3gp";
-    }
-
-    class CircleView extends View {
-        int amp;
-        Paint paint = new Paint();
-        public void onDraw(Canvas c) {
-            if (mRecorder != null) amp = mRecorder.getMaxAmplitude();
-            else amp = 0;
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.parseColor("#88D330"));
-            c.drawCircle(c.getWidth()/2, c.getHeight()/2, (float) 250 + amp, paint);
-
-        }
-
-        public CircleView(Context c) {
-            super(c);
-        }
     }
 }
